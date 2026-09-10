@@ -1,0 +1,11 @@
+.env
+.env.bak
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+.agent_identity.json
+# Holds plaintext runtime env vars written by `agentarts config set-env`
+.agentarts_config.yaml
