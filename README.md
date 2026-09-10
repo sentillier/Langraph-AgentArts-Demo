@@ -47,7 +47,7 @@ POST /invocations
 
 ```
 Langgraph-agentarts-demo/
-├── pyproject.toml          # uv 工程与依赖（agentarts-sdk 指向本地 ../agentarts-sdk-python）
+├── pyproject.toml          # uv 工程与依赖（agentarts-sdk>=0.1.6，来自 PyPI）
 ├── uv.lock                 # 依赖锁定文件
 ├── requirements.txt        # 容器镜像依赖（agentarts-sdk 走 PyPI，而非本地 editable 路径）
 ├── Dockerfile              # 由 agentarts config 生成，CMD 为 python -m demo.app
@@ -71,7 +71,11 @@ Langgraph-agentarts-demo/
 
 前置条件：`uv`（>= 0.5）、Python >= 3.10（本工程默认 3.12）、以及一个 OpenAI 兼容的模型服务。
 
-> 依赖中的 `agentarts-sdk` 默认指向同级目录 `../agentarts-sdk-python`（见 `pyproject.toml` 的 `[tool.uv.sources]`）。只想跑起来、不改 SDK 的话，删掉 `[tool.uv.sources]` 并改用 PyPI 上的 `agentarts-sdk` 即可（容器镜像里的 `requirements.txt` 就是这么做的）。
+> `agentarts-sdk` 直接从 PyPI 安装（`>=0.1.6`），clone 后 `uv sync` 即可使用。若要在本地改 SDK 并用 editable 方式调试，把下面的片段加回 `pyproject.toml` 后重新 `uv lock && uv sync`：
+> ```toml
+> [tool.uv.sources]
+> agentarts-sdk = { path = "../agentarts-sdk-python", editable = true }
+> ```
 
 ```bash
 cd Langgraph-agentarts-demo
