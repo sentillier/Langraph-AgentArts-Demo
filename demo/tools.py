@@ -12,6 +12,7 @@ from typing import Any
 from langchain_core.tools import BaseTool, tool
 
 from demo import identity, memory, sandbox
+from demo import executepython
 from demo.config import get_settings
 
 
@@ -65,9 +66,19 @@ def build_tools() -> list[BaseTool]:
     """Return the tools whose backing capability is configured."""
     settings = get_settings()
     tools: list[BaseTool] = []
-    if sandbox.is_configured():
+    # Runtime-backed execution is opt-in; it takes precedence over the direct
+    # code-interpreter sandbox when configured.
+    if get_settings().runtime_sandbox_ready:
+        tools.append(_runtime_execute_python)
+    elif sandbox.is_configured():
         tools.append(execute_python)
     if settings.memory_enabled:
         tools.append(recall_memory)
     tools.append(whoami)
     return tools
+
+
+@tool("runtime_execute_python")
+def _runtime_execute_python(code: str) -> str:
+    """Execute Python in the deployed AgentArts Runtime sandbox."""
+    return _dumps(executepython.execute_python(code))

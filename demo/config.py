@@ -104,6 +104,9 @@ class Settings:
     sandbox_api_key: str | None
     sandbox_auth_type: str
     sandbox_endpoint: str | None
+    runtime_agent_name: str | None
+    runtime_endpoint: str | None
+    runtime_as_sandbox_tool: bool
 
     identity_workload_name: str | None
     identity_api_key_provider: str | None
@@ -136,6 +139,10 @@ class Settings:
     def sandbox_ready(self) -> bool:
         """True when the sandbox has credentials *and* a data plane endpoint."""
         return self.sandbox_enabled and bool(self.sandbox_endpoint)
+
+    @property
+    def runtime_sandbox_ready(self) -> bool:
+        return self.runtime_as_sandbox_tool and bool(self.runtime_agent_name and self.runtime_endpoint)
 
     @property
     def identity_enabled(self) -> bool:
@@ -186,6 +193,9 @@ def get_settings() -> Settings:
         sandbox_auth_type=_auth_type(),
         sandbox_endpoint=_str("AGENTARTS_CODEINTERPRETER_DATA_ENDPOINT")
         or _str("AGENTARTS_RUNTIME_DATA_ENDPOINT"),
+        runtime_agent_name=_str("AGENTARTS_RUNTIME_AGENT_NAME"),
+        runtime_endpoint=_str("AGENTARTS_RUNTIME_DATA_ENDPOINT"),
+        runtime_as_sandbox_tool=_bool("RUNTIME_AS_SANDBOX_TOOL", False),
         identity_workload_name=_str("AGENTARTS_IDENTITY_WORKLOAD_NAME"),
         identity_api_key_provider=_str("AGENTARTS_IDENTITY_API_KEY_PROVIDER"),
         identity_user_id=_str("AGENTARTS_IDENTITY_USER_ID"),
