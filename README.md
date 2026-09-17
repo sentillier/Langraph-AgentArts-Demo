@@ -285,6 +285,8 @@ uv run python -m demo.cli --user-id alice
 - 会话请求还需要 `AGENTARTS_CODEINTERPRETER_DATA_ENDPOINT`（SDK 无默认值）；三项齐全时 `sandbox.status()` 的 `ready` 才为 `true`。
 - 未配置沙箱时该工具不会暴露给模型（避免模型调用一个注定失败的工具）。
 
+> 想用 Runtime 替代 Code Interpreter（自定义镜像 + SFS Turbo 持久存储 + 完整 shell）的方案、代码案例与限制清单，见 [docs/runtime-as-sandbox.md](docs/runtime-as-sandbox.md)。
+
 ### 记忆
 
 - 会话状态：`AgentArtsMemorySessionSaver(space_id=..., api_key=...)` 作为 `compile(checkpointer=...)` 的检查点存储。
