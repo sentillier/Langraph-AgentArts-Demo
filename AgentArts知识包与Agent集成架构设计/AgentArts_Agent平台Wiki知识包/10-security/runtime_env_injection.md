@@ -376,7 +376,7 @@ agentarts deploy --agent my-agent \
 
 - [01-runtime/runtime.md](../01-runtime/runtime.md) §9 CLI、§10 伙伴 Agent 适配关注
 - [05-identity/identity.md](../05-identity/identity.md) §6 委托与"不应把 AK/SK 塞进运行时环境变量"、§3 三种出站凭证流程
-- [04-gateway/gateway.md](../04-gateway/gateway.md) §60 "密钥不进 Agent 代码"的设计价值
+- [04-gateway/gateway.md](../04-gateway/gateway.md) §8「伙伴适配要点」中"密钥不进 Agent 代码"的设计价值（§5.0 出站认证方式为其实现机制）
 - [08-code-dev/deployment.md](../08-code-dev/deployment.md) §0.4 `create_or_update_agent` 的 `env_vars` 参数、§6 CI/CD 集成
 - [08-code-dev/scaffolding.md](../08-code-dev/scaffolding.md) §4 `.agentarts_config.yaml` 结构（`runtime.environment_variables`）
 - [08-code-dev/cli_reference.md](../08-code-dev/cli_reference.md) §3 `--env` 优先级、§6.1 `config set-env` / `remove-env` / `list-env`

@@ -1,13 +1,32 @@
 # LangGraph + AgentArts Demo
 
-一个基于 **LangGraph** 构建、运行在 **华为云 AgentArts** 上的 Agent 示例，用一个工程把四类云能力串起来：
+一个基于 **LangGraph** 构建、运行在 **华为云 AgentArts** 上的 Agent 示例：用一个可运行的工程把四类云能力串起来，并附带一套完整的**平台能力知识包 + 整体架构设计**（见下方「文档导航」与「目录结构」）。
 
 | 能力 | 在 demo 中的体现 | 代码位置 |
 |------|------------------|----------|
 | 运行托管 | `AgentArtsRuntimeApp` 把 LangGraph 图暴露为标准 HTTP 服务（`/invocations`、`/ping`、`/ws`） | `demo/app.py` |
-| 沙箱工具 | 代码解释器（Code Interpreter）沙箱执行 Python，作为工具暴露给模型 | `demo/sandbox.py`、`demo/tools.py` |
+| 代码解释器 | 代码解释器（Code Interpreter）沙箱执行 Python，作为工具暴露给模型 | `demo/sandbox.py`、`demo/tools.py` |
 | 记忆 | 会话状态持久化到 Memory Space + 每轮自动语义召回长期记忆 | `demo/memory.py`、`demo/graph.py` |
 | Identity | 请求级用户身份（决定记忆归属）+ 从 Agent Identity 动态获取模型凭据 | `demo/identity.py` |
+
+> **术语说明**：0804 版官方材料把代码解释器与浏览器统称「沙箱工具」。0916 材料已拆为**代码解释器**（本 demo 使用）与**浏览器**（本 demo 未使用，网页自动化独立能力域）两个能力域，本文统一用新术语。
+
+## 文档导航
+
+本仓库有两块内容：**可运行的 demo 工程**（`demo/`、`Dockerfile`、部署配置）与**平台知识包 + 架构设计**（`AgentArts知识包与Agent集成架构设计/`）。
+
+| 你想了解 | 看这里 |
+|---|---|
+| demo 怎么跑起来 | 本文档下方「环境准备」→「快速开始」 |
+| 怎么部署到云上运行时 | 本文档「创建云上运行时环境」 |
+| AgentArts 平台有哪些能力 | [知识包索引](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/README.md) |
+| 本项目的整体架构与选型 | [整体架构设计v3](AgentArts知识包与Agent集成架构设计/整体架构设计/整体架构设计v3.md)（**当前有效版本**） |
+| 0804 → 0916 官方材料有哪些变化 | [版本差异基线](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/00-overview/release_delta_0916.md) |
+| 智能体安全怎么做（三层框架） | [智能体安全](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/10-security/agent_security.md) |
+| 环境变量怎么注入、密钥该放哪 | [Runtime 环境变量注入](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/10-security/runtime_env_injection.md) |
+| 通过 API 直接创建 runtime | [部署与远程运维](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/08-code-dev/deployment.md) 第 0 节「管理面 API」 |
+| 上线前怎么验收 | [实验局验收](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/07-operation/field_validation.md) |
+| 架构图怎么画（gpt-image-2） | [架构图Prompt](AgentArts知识包与Agent集成架构设计/整体架构设计/架构图Prompt.md) |
 
 ## 架构
 
@@ -40,32 +59,100 @@ POST /invocations
 要点：
 
 - **短期记忆**：`AgentArtsMemorySessionSaver` 以 `thread_id` 为会话 ID，把每一轮对话写进 Memory Space；服务重启后同一 `thread_id` 仍可续聊。
-- **长期记忆**：Memory Space 内置 4 种抽取策略（`semantic` / `episodic` / `user_preference` / `summary`）在后台自动抽取记忆；`recall` 节点每轮调用 `AgentArtsMemoryStore.search` 做语义检索，把 Top-K 记忆注入系统提示词，模型也可以用 `recall_memory` 工具按需深入检索。
+- **长期记忆**：Memory Space 的抽取策略在后台异步生成长期记忆；`recall` 节点每轮调用 `AgentArtsMemoryStore.search` 做语义检索，把 Top-K 记忆注入系统提示词，模型也可以用 `recall_memory` 工具按需深入检索。
+
+> **本 demo 启用的策略**：`semantic` / `episodic` / `user_preference` / `summary`（见 `demo/bootstrap.py` 的 `MEMORY_STRATEGIES`）。**平台共提供 5 个内置策略**，第 5 个是 **程序性记忆（Procedural Memory）**——用于固化可复用的任务流程与执行经验，在编码 / 运维类场景价值最高，本 demo 未启用。完整策略说明见 [03-memory/memory.md](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/03-memory/memory.md) §1.3。
+- **抽取触发**：会话空闲 / 累计 Token / 累计消息数三者**任一满足**即触发（**OR 关系**）。本 demo 显式把空闲触发设为 30 秒（`memory_extract_idle_seconds=30`），官方默认是 10 秒。
+- **可见延迟**：抽取为异步，官方建议**写入后等待 3–5 分钟**再检索长期记忆——不要把"刚写完就能召回"写进业务假设或验收脚本。
 - **多租户隔离**：记忆检索按 `actor_id` 过滤，`actor_id` 来自请求头中的用户身份（见下文 Identity 部分）。
 
 ## 目录结构
 
+`git` 共跟踪 **48 个文件**，分为四块：工程与部署配置（根目录）、Agent 业务代码（`demo/`）、设计说明（`docs/`）、平台知识包与架构设计（`AgentArts知识包与Agent集成架构设计/`）。
+
 ```
 Langgraph-agentarts-demo/
-├── pyproject.toml          # uv 工程与依赖（agentarts-sdk>=0.1.6，来自 PyPI）
-├── uv.lock                 # 依赖锁定文件
-├── requirements.txt        # 容器镜像依赖（agentarts-sdk 走 PyPI，而非本地 editable 路径）
-├── Dockerfile              # 由 agentarts config 生成，CMD 为 python -m demo.app
-├── .dockerignore           # 构建上下文排除 .venv/.env 等
-├── .agentarts_config.yaml  # 部署配置（base / swr_config / runtime.*）
-├── .env.example            # 环境变量模板
-├── README.md               # 本文档
-├── demo/
-│   ├── config.py           # 读取 .env，汇总所有配置与能力开关
-│   ├── app.py              # 运行托管：AgentArtsRuntimeApp + /invocations 入口
-│   ├── graph.py            # LangGraph 图：recall → agent → tools
-│   ├── tools.py            # 暴露给模型的工具（沙箱 / 记忆 / identity）
-│   ├── sandbox.py          # 代码解释器沙箱能力
-│   ├── memory.py           # 记忆能力（checkpointer + store 检索）
-│   ├── identity.py         # Identity 能力（用户身份 + 凭据获取）
-│   ├── bootstrap.py        # 一次性创建 Memory Space / 工作负载身份
-│   └── cli.py              # 本地对话客户端
+│
+├── README.md                   # 本文档：工程总览 + 文档导航 + 目录结构 + 快速开始
+│
+├── 【工程与部署】────────────────────────────────────────────────
+├── pyproject.toml              # uv 工程与依赖（agentarts-sdk>=0.1.6，来自 PyPI）
+├── uv.lock                     # 依赖锁定文件
+├── requirements.txt            # 容器镜像依赖（与 pyproject 分离，agentarts-sdk 走 PyPI 而非本地路径）
+├── Dockerfile                  # 镜像构建：python:3.12-slim → 非 root → CMD python -m demo.app
+├── .dockerignore               # 构建上下文排除 .venv / .env / __pycache__ 等
+├── .env.example                # 环境变量模板（复制为 .env 使用）
+├── .python-version             # Python 版本固定
+├── .gitignore                  # 忽略 .env / .agentarts_config.yaml / .venv / __pycache__ 等
+│
+├── 【Agent 业务代码】demo/ ───────────────────────────────────────
+│   ├── __init__.py
+│   ├── app.py                  # 运行托管入口：AgentArtsRuntimeApp + /invocations / /ping / /ws
+│   ├── graph.py                # LangGraph 图：recall → agent → tools
+│   ├── tools.py                # 工具装配（按能力开关裁剪，未就绪的工具不暴露给模型）
+│   ├── sandbox.py              # 代码解释器：code_session 封装 + execute_python 工具
+│   ├── executepython.py        # Runtime-as-Sandbox 增强路径：runtime_execute_python 工具
+│   ├── memory.py               # 记忆：checkpointer（SessionSaver）+ store 语义召回
+│   ├── identity.py             # Identity：actor_id 解析 + 工作负载身份取模型凭据
+│   ├── config.py               # 读取 .env，汇总配置与能力开关（capabilities()）
+│   ├── bootstrap.py            # 一次性创建 Memory Space / 工作负载身份 / 绑定代码解释器
+│   └── cli.py                  # 本地对话客户端
+│
+├── 【设计说明】docs/ ────────────────────────────────────────────
+│   └── runtime-as-sandbox.md   # 用 Runtime 冒充沙箱：可行性、实现与限制清单
+│
+└── 【平台知识包 + 架构设计】AgentArts知识包与Agent集成架构设计/ ──────
+    │
+    ├── AgentArts_Agent平台Wiki知识包/       # 平台能力知识库（面向 Agent 检索）
+    │   ├── README.md                       # 知识包索引 + SDK 模块速查
+    │   ├── 00-overview/                    # 平台架构总纲 / Managed Agents / 版本差异基线
+    │   │   ├── platform_architecture.md
+    │   │   ├── managed_agents.md
+    │   │   └── release_delta_0916.md       # ★ 0804 → 0916 差异基线与影响清单
+    │   ├── 01-runtime/runtime.md           # 运行时（SDK 侧契约 + 平台侧托管规范）
+    │   ├── 02-sandbox/                     # 代码解释器 + 浏览器
+    │   │   ├── sandbox.md
+    │   │   └── browser.md
+    │   ├── 03-memory/                      # 记忆库 + 记忆插件
+    │   │   ├── memory.md
+    │   │   └── memory_plugin.md
+    │   ├── 04-gateway/gateway.md           # MCP 网关：Target 四类型 + 入站认证 + 出站身份
+    │   ├── 05-identity/identity.md         # 身份、认证与授权（含两个 IAM 委托）
+    │   ├── 06-integration/                 # 伙伴 Agent 联合开发适配指南
+    │   │   └── partner_agent_adaptation.md
+    │   ├── 07-operation/                   # 观测 / 评估 / 优化 / 实验局验收
+    │   │   ├── observability.md
+    │   │   ├── evaluation.md
+    │   │   ├── optimization.md
+    │   │   └── field_validation.md
+    │   ├── 08-code-dev/                    # 脚手架 / CLI / 部署（含管理面 API）/ 框架集成
+    │   │   ├── scaffolding.md
+    │   │   ├── cli_reference.md
+    │   │   ├── deployment.md
+    │   │   └── framework_integration.md
+    │   ├── 09-knowledge-base/              # 知识库（RAG 底座）
+    │   │   └── knowledge_base.md
+    │   └── 10-security/                    # 智能体安全 + 环境变量注入
+    │       ├── agent_security.md           # 三层安全框架（含【需求方输入】待补充项）
+    │       └── runtime_env_injection.md    # 环境变量 / 密钥该走哪条路径
+    │
+    └── 整体架构设计/
+        ├── 整体架构设计v3.md               # ★ 当前有效版本（事实来源：0916 材料）
+        ├── 整体架构设计v2.md               # 历史基线（已被 v3 取代）
+        ├── 整体架构设计v1.md               # 历史基线（已被 v3 取代）
+        └── 架构图Prompt.md                 # 4 张架构图的 gpt-image-2 绘图 prompt
 ```
+
+### 本地生成物（不入版本控制）
+
+| 路径 | 说明 |
+|------|------|
+| `.env` | 本地环境变量（含密钥），由 `.env.example` 复制而来 |
+| `.agentarts_config.yaml` | `agentarts config` 生成的部署配置。`config set-env` 会把**明文密钥**写进该文件，因此已加入 `.gitignore`，**请勿提交** |
+| `.env.bak` | `bootstrap` 写回 `.env` 前的自动备份 |
+| `.venv/`、`__pycache__/` | 本地虚拟环境与字节码 |
+
+> 想了解知识包怎么用（按问题找文档、按能力找 SDK 模块），见 [知识包索引](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/README.md) 的「知识组织」与「SDK 模块速查」两节。
 
 ## 环境准备
 
@@ -116,7 +203,7 @@ uv sync
 | `HUAWEICLOUD_SDK_MEMORY_API_KEY` | 用记忆时必填 | 数据面 API Key，由 `bootstrap memory` 自动写入 |
 | `AGENTARTS_MEMORY_SPACE_NAME` | 否 | 创建 Space 时的名称，默认 `langgraph-agentarts-demo-space` |
 
-### 4. 沙箱（Code Interpreter）
+### 4. 代码解释器（Code Interpreter）
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
@@ -174,7 +261,7 @@ uv run python -m demo.bootstrap identity
 
 该命令会创建 API Key 凭据提供商（默认托管 `OPENAI_API_KEY` 的值）与工作负载身份，做一次「下发凭据」往返校验，并把名称写回 `.env`。之后 Agent 启动时会通过 `@require_api_key` 从 Agent Identity 获取模型密钥，`OPENAI_API_KEY` 不再需要出现在运行环境中。
 
-### 第 4 步：配置沙箱（可选）
+### 第 4 步：配置代码解释器（可选）
 
 ```bash
 # 先看看当前区域有哪些代码解释器（会列出名称 / ID / 访问端点）
@@ -276,7 +363,7 @@ uv run python -m demo.cli --user-id alice
 
 `demo/app.py` 用 `AgentArtsRuntimeApp` 注册入口函数：入参签名带 `context: RequestContext` 时，运行时会注入请求上下文（会话 ID、请求 ID），并自动把请求头解析进 `AgentArtsRuntimeContext`。返回 `dict` 即普通 JSON 响应，返回生成器则自动变成 SSE 流式响应。
 
-### 沙箱工具
+### 代码解释器
 
 `demo/sandbox.py` 每次调用都通过 `code_session(...)` 开启一个新的代码解释器会话并在结束时销毁，代码不会在 Agent 进程内执行。
 
@@ -286,6 +373,8 @@ uv run python -m demo.cli --user-id alice
 - 未配置沙箱时该工具不会暴露给模型（避免模型调用一个注定失败的工具）。
 
 > 想用 Runtime 替代 Code Interpreter（自定义镜像 + SFS Turbo 持久存储 + 完整 shell）的方案、代码案例与限制清单，见 [docs/runtime-as-sandbox.md](docs/runtime-as-sandbox.md)。
+
+> **本 demo 未涉及的能力**：AgentArts 另有独立的 **浏览器（Browser）** 能力域（网页自动化：导航 / 点击 / 截图 / Profile / 代理 / LiveView / 人工接管），与代码解释器**并列而非包含**，各自有独立控制面/数据面 API 与独立会话。需要网页操作时见 [02-sandbox/browser.md](AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/02-sandbox/browser.md)。
 
 ### 记忆
 
@@ -461,7 +550,7 @@ agentarts destroy -a demo-agent
 
 - **`/invocations` 返回 500 `RuntimeError: No model credential available`**：未设置 `OPENAI_API_KEY`，也未配置 Agent Identity。
 - **日志出现 `Could not load existing config`/`warning: Provider might already exist`**：`bootstrap identity` 重复执行时会命中已存在的资源，属正常现象；如需重建请先在控制台清理或改用新的名称。
-- **记忆召回为空**：长期记忆由 Memory 服务在后台异步抽取，刚聊完的几轮可能需要等待（本 demo 的 Space 设置为空闲 30 秒触发抽取）；同时确认检索用的 `actor_id` 与写入时一致。
+- **记忆召回为空**：长期记忆由 Memory 服务在后台**异步**抽取，官方建议**写入后等待 3–5 分钟**再检索（本 demo 的 Space 显式设为空闲 30 秒触发抽取，官方默认 10 秒；触发条件为"空闲 / 累计 Token / 累计消息数"任一满足）；同时确认检索用的 `actor_id` 与写入时一致。
 - **本地访问被代理拦截**：若系统配置了 `ALL_PROXY`/`HTTP_PROXY`，`demo.cli` 会对 localhost 自动绕过代理；使用 `curl` 时可加 `--noproxy '*'`。
 - **想抓代码解释器的异常却抓不到**：SDK 的 `ToolsAPIError` 继承自 `BaseException` 而非 `Exception`，`except Exception` 不会命中它；本 demo 在 `demo/sandbox.py`、`demo/bootstrap.py` 中显式捕获了该异常。
 - **`.env` 被写坏/写空**：`bootstrap` 每次写回前会把原文件备份成 `.env.bak`（已在 `.gitignore` 中忽略），可直接改名恢复。
