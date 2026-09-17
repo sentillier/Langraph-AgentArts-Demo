@@ -479,7 +479,7 @@ with sandbox.session(user_id="demo-user") as sid:
 ### 6.2 主要坑
 
 - **镜像不是"随便一个容器"**：runtime 要能监听 8080 并响应 runtime 协议（`/ping`、`/invocations`，见 `agentarts-sdk-python/src/agentarts/sdk/runtime/app.py`），所以自定义镜像得是个最小 stub agent app，不能是 `tail -f /dev/null`。stub 写法见 4.3。
-- **隔离等级下降**：CI 沙箱有命令字符集白名单，runtime 的 `exec_command` 是完整 `sh -c`（`AgentArtsPhase2/AgentArts_Agent平台Wiki知识包/02-sandbox/sandbox.md` 第 7 节明确写了"需完整 shell 由 Runtime 侧 exec-command 包裹"）。跑不可信代码时，你就只剩容器边界了。
+- **隔离等级下降**：CI 沙箱有命令字符集白名单，runtime 的 `exec_command` 是完整 `sh -c`（`Langgraph-agentarts-demo/AgentArts知识包与Agent集成架构设计/AgentArts_Agent平台Wiki知识包/02-sandbox/sandbox.md` 第 7 节明确写了"需完整 shell 由 Runtime 侧 exec-command 包裹"）。跑不可信代码时，你就只剩容器边界了。
 - **存储是 runtime 级的**：SFS Turbo 挂载对该实例所有 session 可见，`read_only` 只能整体开关；多任务并发必须自己定子目录约定和锁。`session_storage` 则是会话内有效、随会话销毁。
 - **计费模型变了**：CIE 按执行计费、session 起停；runtime 是按实例存活时长占用配额，闲置必须回收。
 - **权限两套要分别管**：控制面 AK/SK + 数据面 API Key / Bearer。
