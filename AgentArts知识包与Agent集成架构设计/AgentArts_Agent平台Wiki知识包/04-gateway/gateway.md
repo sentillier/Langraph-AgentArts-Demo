@@ -1,6 +1,8 @@
 # Gateway（MCP 网关）
 
 > SDK 锚点：`agentarts.sdk.gateway.GatewayClient`（**原 `mcpgateway` 已重命名为 `gateway`**，模块路径、CLI 命令、文档同步更名）。Python 3.10+。
+>
+> **官方材料基线**：0916《托管与运行智能体》第 6 章「网关」（196–247 页）+ API 参考 4.5。
 
 ## 1. 定位与原理
 
@@ -18,9 +20,44 @@ Gateway（授权 + 协议）
 ```
 
 支持：
-- **协议**：`protocol_type="mcp"`（Model Context Protocol），`protocol_configuration` 自由 dict 透传
-- **授权类型**：`iam` / `api_key` / `custom_jwt`
-- **Target 管理**：Gateway 下挂多个 Target，每个 Target 有独立的 `target_configuration` 和 `credential_provider_configuration`
+- **协议**：`protocol_type="mcp"`（Model Context Protocol），`protocol_configuration` 自由 dict 透传；**MCP 版本 2025-03-26**
+- **入站授权类型**：`iam` / `api_key` / `custom_jwt`（对应官方 IAM / API Key / OAuth 2.0）
+- **Target 管理**：Gateway 下挂多个 Target，每个 Target 有独立的 `target_configuration` 和出站身份
+- **出站身份（OutBound 身份）**：API Key / OAuth / IAM / 无认证，可复用、多 Target 绑定
+
+### 1.1 工作原理（0916 官方口径）
+
+Agent 通过网关发现和调用外部工具（MCP 协议）：
+
+1. Agent 向网关发送 `tools/list` 请求
+2. 网关汇总所有 MCP Target 暴露的工具，返回**统一**的工具列表
+3. Agent 根据工具描述选择目标工具
+4. Agent 向网关发送 `tools/call` 请求
+5. 网关路由到对应 Target 执行
+6. Target 返回结果，网关转发给 Agent
+
+**工具发现机制（分页拉取，重要实现细节）**：
+
+1. Agent 发送 `tools/list`
+2. 网关遍历 MCP Target，**单次请求仅返回一个 Target 的工具列表**，并返回 `cursor` 游标
+3. Agent 携带 `cursor` 继续调用 `tools/list`，网关返回下一个 Target 的工具列表，循环直至全部 Target 遍历完成
+4. 每个 Target 返回自己暴露的工具列表
+5. Agent 循环拉取，汇总得到完整工具列表——**不需要关心工具在哪个 Target 上**
+
+每个工具包含：`name`、`description`、`inputSchema`。
+
+> ⚠️ **实现提醒**：工具列表是**分页的**。客户端必须循环到 `cursor` 为空才能拿到全量工具，否则会静默丢失后面 Target 的工具。
+
+### 1.2 认证与鉴权：入站与出站两层（0916 新增明确）
+
+| 方向 | 说明 | 配置位置 |
+| --- | --- | --- |
+| **入站认证** | 验证"谁在调用网关"。Agent 或应用向网关发请求时，网关验证调用方身份（IAM / OAuth 2.0 / API Key） | **创建网关时配置** |
+| **出站认证** | 网关"代表调用方访问后端"。网关向 Target 后端转发请求时，自动附加后端服务所需的认证信息（API Key / OAuth / IAM） | **创建 Target 时配置** |
+
+**入站与出站配置互不影响**：入站用 IAM，出站完全可以用 API Key。
+
+> **核心设计价值**：出站认证把后端凭证集中管理在网关侧。Agent 只需携带网关的入站认证，**Agent 代码中不出现后端服务凭证**。解决三个问题：① 凭证硬编码泄露风险；② 换后端/轮换密钥无需改 Agent 代码重新部署；③ 多 Agent 调同一后端不必重复配置凭证。
 
 ## 2. 快速开始
 
@@ -130,13 +167,81 @@ JSON 字符串选项：`--authorizer-configuration`、`--protocol-configuration`
 
 > **文档/代码偏差**：中文文档 `gateway_cli.md` 把命令写作 `create-gateway`/`update-gateway` 等，但代码实际注册的是 `gateway create`/`update`/...。以代码为准。
 
-## 5. 授权器选择
+## 5. Target 类型（0916 官方四类）
+
+网关把 MCP 协议调用转换为后端能接受的请求。**Target 类型决定转换目标**：
+
+| Target 类型 | 说明 |
+| --- | --- |
+| **REST API** | 对接普通第三方 HTTP REST API，把 MCP 协议调用转成普通 REST HTTP 请求 |
+| **MCP** | 对接标准 MCP Server 后端，走原生 MCP 协议。需配置**传输方式**（如 Streamable HTTP）与 **MCP 地址** |
+| **APIG** | 对接华为云 APIG，把 MCP 协议调用转成注册在 APIG 上的 REST HTTP 请求 |
+| **云服务** | 对接华为云各云服务 OpenAPI，把 MCP 协议调用转成华为云服务开放的 REST HTTP 请求。需额外创建 IAM 信任委托并授权 |
+
+> ⚠️ **术语变更**：0804 材料把第一类称为 **`OpenAPI Schemas`**；0916 材料改称 **`REST API`**。这是同一个能力的更名，不是新能力。引用旧结论时注意。
+
+### 5.0 出站认证方式（0916 新增）
+
+出站认证适用于**所有类型**的 Target：
+
+| 认证方式 | 认证流程 | 适用场景 |
+| --- | --- | --- |
+| **API Key** | 网关转发请求时把 API Key 附加到请求头（如 `Authorization: Bearer {api_key}` 或自定义头），后端校验 Key 合法性 | 大多数 REST API、外部模型提供商（OpenAI / DeepSeek 等）、需简单密钥认证的服务 |
+| **OAuth** | 网关用配置的 OAuth 2.0 凭证（Client ID / Client Secret）向授权服务器获取 Access Token，附加到转发请求；**Token 过期后自动刷新** | 需标准 OAuth 2.0 授权流程的服务、企业 SSO 对接、华为云云服务 |
+| **IAM** | 网关用配置的华为云 IAM 凭证（AK/SK）对转发请求签名，后端通过签名验证网关身份。**签名过程自动完成**，无需手动生成 | 华为云云服务（OBS、ECS、ModelArts 等）、需华为云 IAM 身份认证的后端 |
+| **无认证** | 网关直接转发请求，不附加任何认证信息 | 内网服务（同一 VPC 内）、已有其他鉴权机制的后端、测试环境 |
+
+**出站身份的复用**：出站身份是**一组可复用的认证配置**。创建后可绑定到多个 Target，无需在每个 Target 中重复填写；**修改出站身份配置后，所有绑定的 Target 同步生效**。
+
+## 5.1 授权器选择（入站）
 
 | 授权器 | 适用场景 |
 | --- | --- |
-| `iam` | 华为云内部服务调用 |
-| `api_key` | 外部系统集成，简单易用 |
-| `custom_jwt` | 需要自定义认证逻辑 |
+| `iam` | 华为云内部服务调用；运行时/网关对网关的 Agent-to-Agent 调用 |
+| `api_key` | 外部系统集成，简单易用（官方示例常用） |
+| `custom_jwt`（OAuth 2.0） | 需要第三方身份提供商（Okta / Cognito 等）签发的 JWT |
+
+**OAuth 2.0 入站配置参数**：`Discovery URL`（须以 `https://` 开头、`/.openid-configuration` 结尾）、允许的受众（≤100）、允许的客户端（≤100）、允许的范围（≤100）、自定义声明匹配。
+
+## 5.2 调测与调用网关（0916）
+
+集成到 Agent 前，必须依次验证三件事，否则会在调用阶段出意外错误：
+
+1. **网关是否可以正常连接** —— 确认入站认证、网络可达
+2. **Target 的工具是否可以被发现** —— 确认 Target 后端服务正常、工具列表不为空
+3. **工具调用是否返回正确结果** —— 确认出站认证正确、参数格式正确、后端服务响应符合预期
+
+| 操作 | 说明 |
+| --- | --- |
+| 调测网关 | 控制台「调测」页签 → 连接测试（网关 URL 系统默认写入）→ 工具检索 → 工具调试。入站为 OAuth 2.0 时可填 Access token：不填则调**默认调测网关**（内部测试），填了则调**租户网关**（实际业务） |
+| 列出网关工具 | 请求体指定 `method: "tools/list"`，返回工具名称、描述、参数定义 |
+| 调用网关工具 | `method: "tools/call"` |
+| 检索网关工具 | 网关开启**语义检索**后，可按关键字筛选匹配工具；系统按配置的 **Top N** 与**相似阈值**筛选展示。工具调试页可切「全部」查看 Target 全部工具 |
+| 查看网关日志 | 创建网关时开启日志后，调测日志在「日志」页签可查看 |
+
+**语义检索的价值**：当 Target 数量与工具数量增长后，把全量工具列表塞进模型上下文会迅速耗尽窗口。语义检索按关键字+相似阈值先筛一层，只把相关工具暴露给模型。
+
+原文请求体示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-tools-request",
+  "method": "tools/list",
+  "params": { "cursor": "<CURSOR>" }
+}
+```
+
+## 5.3 网关创建时的关键参数（官方示例）
+
+| 参数 | 说明 |
+| --- | --- |
+| 名称 / 描述 | 自定义 |
+| **MCP 版本** | `2025-03-26` |
+| 委托 | 使用平台默认值（报"委托缺少 CSMS/KMS 相关 action 权限"时需补齐授权） |
+| **入站身份认证** | API Key / IAM / OAuth 2.0 |
+| API Key 名称 | 入站为 API Key 时必填 |
+| 日志记录 | 开启后投递调用日志 |
 
 ## 6. Skill 四元组映射
 
@@ -185,11 +290,13 @@ sequenceDiagram
 
 ## 8. 伙伴适配要点
 
-1. **外部 API → Target**：每个外部能力封装为一个 Target，`target_configuration` 描述连接细节
-2. **认证 → credential_provider_configuration**：Target 级凭证配置，避免密钥进 Agent 代码
-3. **授权 → Gateway authorizer_type**：网关级授权策略，统一管控
+1. **外部 API → Target**：每个外部能力封装为一个 Target，按官方四类（REST API / MCP / APIG / 云服务）选择，`target_configuration` 描述连接细节
+2. **出站认证 → 出站身份**：把后端凭证做成可复用的出站身份，多 Target 共享；**这是"密钥不进 Agent 代码"的实现机制**
+3. **入站认证 → Gateway authorizer_type**：网关级授权策略，统一管控
 4. **网络 → outbound_network_configuration**：public 模式公网访问，VPC 内网模式更安全
 5. **日志 → log_delivery_configuration**：开启后投递调用日志，用于审计
+6. **工具发现要循环 cursor**：`tools/list` 单次只返回一个 Target 的工具，必须循环到 cursor 为空
+7. **工具规模大时开语义检索**：避免全量工具列表撑爆模型上下文
 
 ## 9. 最佳实践
 
@@ -198,4 +305,4 @@ sequenceDiagram
 3. **生产用 VPC 内网**：`outbound_network_configuration` 设为 private，安全性更高
 4. **定期轮换密钥**：AK/SK 定期轮换，用密钥管理服务
 5. **删除前检查**：确保网关下无运行中任务，先删所有关联 Target
-6. **上线前验证日志**：`log_delivery_configuration.enabled=true` 后执行一次 Target 调用，确认网关详情和“智能体运行分析”可检索。详见 [可观测性](../07-operation/observability.md)。
+6. **上线前验证日志**：`log_delivery_configuration.enabled=true` 后执行一次 Target 调用，确认网关详情和「观测与优化 > 观测 > 查看托管智能体数据」可检索。详见 [可观测性](../07-operation/observability.md)。

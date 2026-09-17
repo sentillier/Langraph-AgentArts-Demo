@@ -1,6 +1,10 @@
 # CLI 命令参考
 
-> 入口：`agentarts`（Typer + Rich）。全局选项：`--version/-v`、`--verbose`（DEBUG 日志）。首次运行自动安装 shell 补全。
+> 入口：`agentarts`（Typer + Rich）。全局选项：`--version/-v`、`--verbose`（DEBUG 日志）、`--help`。首次运行自动安装 shell 补全。
+>
+> **官方材料基线**：0916《托管与运行智能体》12.4「CLI」（402–425 页）+ SDK 源码 `src/agentarts/toolkit/`。
+>
+> **环境要求（官方 12.4）**：操作系统 **Linux ARM64**，服务器可访问公网；Python ≥ 3.10；Docker ≥ 18.06。**必须用 ARM64 制作 Agent 镜像**。
 
 ## 1. 顶层命令清单
 
@@ -153,6 +157,54 @@ agentarts destroy --agent my-agent --region cn-southwest-2 --yes
 - 需 `file_transfer_config.enabled: true`（配置中开启）
 - `--path` 必须以 `/` 结尾，默认 `/tmp/`
 - `--file-user-id`（默认 1000）、`--file-group-id`（默认 1000）
+
+### 6.1 config 子组（0916 补充）
+
+| 子命令 | 说明 |
+| --- | --- |
+| `config list` | 列出所有 Agent 配置 |
+| `config set-default` | 设置默认 Agent |
+| `config get` | 读取配置项 |
+| `config set` | 设置配置项（含 `runtime.artifact_source.url` 等） |
+| `config remove` | 移除配置项 |
+| `config set-env` | 设置环境变量 |
+| `config remove-env` | 移除环境变量 |
+| `config list-env` | 列出环境变量 |
+
+配置文件：`.agentarts_config.yaml`，含 `base` / `swr_config` / `runtime` 三段。**运行时关键字段**（`AgentArtsRuntimeConfig`）：
+
+| 字段 | 取值 |
+| --- | --- |
+| `agent_id` / `agent_gateway_id` | 运行时 ID / 绑定的网关 ID |
+| `arch` | `arm64`（默认）\| `x86_64` |
+| `execution_agency_name` | 用户运行时委托名（不填用默认 `DefaultAgentArtsRuntimeAgency`） |
+| `identity_configuration` | 入站认证：`authorizer_type` ∈ `IAM` / `API_KEY` / `CUSTOM_JWT` + `authorizer_configuration` |
+| `network_config` | `network_mode` ∈ PUBLIC / VPC + `vpc_config`（`vpc_id` / `subnet_id` / `security_group_id`） |
+| `invoke_config` | `protocol` ∈ `HTTP` / `MCP` / `WEBSOCKET`；`port`；`file_transfer_config.enabled`；`url_match_type` ∈ `ACCURATE_MATCH` / `PREFIX_MATCH` |
+| `observability` | `tracing` / `metrics` / `logs` 各自 `enabled` |
+| `artifact_source` | `url` / `swr_instance_id` / `commands`（最多 10 条） |
+| `storage_config` | `sfs_turbo`（`sfs_turbo_id` / `sfs_path` / `mount_path` / `read_only`）+ `session_storage`（`mount_path`） |
+| `environment_variables` / `tags` | 键值对列表 |
+
+> 校验规则（源码）：设置 `storage_config.sfs_turbo[0].sfs_turbo_id` 时 **必须同时提供 `mount_path`**，否则报错。
+
+`swr_config` 字段：`organization` / `repository` / `organization_auto_create` / `repository_auto_create`。
+
+### 6.2 官方 CLI 命令语义（0916 表 12-2）
+
+| 命令 | 官方说明 |
+| --- | --- |
+| `init` | 初始化一个新的 AgentArts 项目，创建完整项目结构（Agent 实现代码、依赖文件、配置文件） |
+| `configure` / `config` | 管理 AgentArts 项目配置：创建、更新、查看和管理 Agent 配置信息（基本配置、SWR 配置、运行时配置） |
+| `dev` | 本地启动开发服务器，支持**热重载**、自定义端口和环境变量配置 |
+| `deploy` / `launch` | 部署到华为云 AgentArts：**构建 Docker 镜像 → 上传 SWR → 创建或更新 Agent 实例** |
+| `invoke` | 调用已部署 Agent，支持**同步调用和流式调用**两种模式 |
+| `destroy` | 从 AgentArts 平台删除 Agent 及其相关资源；执行前会提示确认，防止误操作 |
+| `runtime` | 操作华为云 AgentArts 运行时，提供**会话管理、文件传输、命令执行**等数据平面操作能力 |
+| `gateway` | 网关管理 |
+| `memory` | 记忆库管理 + 记忆插件安装 |
+
+故障排查辅助：`agentarts --help`（详细命令信息）、`agentarts --verbose`（调试日志）。
 
 ## 7. gateway 子组
 

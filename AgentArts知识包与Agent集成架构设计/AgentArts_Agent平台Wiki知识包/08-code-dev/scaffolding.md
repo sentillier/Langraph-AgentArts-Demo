@@ -1,6 +1,10 @@
 # 项目脚手架与模板
 
 > `agentarts init` 命令生成项目骨架，`agentarts config` 生成配置与 Dockerfile。本篇覆盖项目结构、模板系统、配置文件。
+>
+> **官方材料基线**：0916《托管与运行智能体》12.3「快速开始」+ SDK `src/agentarts/toolkit/utils/templates/`。
+>
+> ⚠️ **环境前提（官方 12.4）**：CLI 要求 **Linux ARM64**、Python ≥ 3.10、Docker ≥ 18.06；**必须用 ARM64 机器制作镜像**，x86 镜像在调用时会失败。
 
 ## 1. init：创建项目
 

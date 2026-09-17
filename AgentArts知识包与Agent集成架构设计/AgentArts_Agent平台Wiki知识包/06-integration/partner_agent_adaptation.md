@@ -1,6 +1,41 @@
 # 伙伴 Agent 联合开发适配指南
 
 > SDK 锚点：`agentarts.sdk.integration`（懒加载 `__getattr__`）。当前实现 LangGraph 适配器，其余框架通过 `AgentArtsRuntimeApp` 的 `@app.entrypoint` 通用接入。
+>
+> **官方材料基线**：0916《托管与运行智能体》《Managed Agents》《最佳实践》。
+
+## 0. 先选形态：Runtime 还是 Managed Agents（0916 新增前置决策）
+
+在讨论"怎么适配"之前，必须先定"适配到哪"。0916 材料把这条决策正式化：
+
+| 判据 | Managed Agents | 运行时 |
+| --- | --- | --- |
+| 上手方式 | 配置驱动，零代码 | 代码驱动，打包镜像 |
+| 基础设施 | 全托管 | 用户管理版本/实例 |
+| 定制灵活度 | 通过配置项调整 | 代码层面完全可控 |
+| 适用场景 | 快速验证 / 标准场景 | 深度定制 / 复杂逻辑 |
+
+**伙伴 Agent 的实操判据**：
+
+| 伙伴侧特征 | 结论 |
+| --- | --- |
+| 已有成熟 Agent 代码 / 框架（LangGraph 等） | **走运行时**。Managed Agents 不接受自定义代码 |
+| 需要自定义依赖、中间件、私有库 | **走运行时** |
+| 需要 MCP 入站协议（被其他 Agent 当 MCP Server 调用） | **走运行时** |
+| 需要版本灰度发布、多端点、自定义镜像 | **走运行时** |
+| 只需要"模型 + 提示词 + 文件/shell 工具"就能完成任务 | 可评估 Managed Agents |
+| 想快速验证、不想碰 Docker/SWR | 可评估 Managed Agents |
+| 需要 Skill 技能包 | Managed Agents（注意：须**私网访问 + 挂 OBS**） |
+
+> **本文档余下章节全部针对"走运行时"的适配**。若选 Managed Agents，见 [00-overview/managed_agents.md](../00-overview/managed_agents.md)。
+
+## 0.1 运行时侧的三条硬约束（适配前必须确认）
+
+1. **镜像必须 ARM64**，x86 镜像调用直接失败
+2. **本地磁盘不可依赖**：沙箱空闲释放时本地磁盘数据全部丢失
+3. **区域仅 `cn-southwest-2`**
+
+## 1. 接入模型
 
 ## 1. 接入模型
 
@@ -198,21 +233,28 @@ LangChain / AutoGen / CrewAI / Google ADK：**无需专用适配器**，用 `@ap
 | --- | --- |
 | Agent 入口 | `@app.entrypoint async def handler(payload, context: RequestContext) -> dict` |
 | Session 协议 | `x-hw-agentarts-session-id` 头 或 `RequestContext.session_id` |
-| Gateway 调用 | `GatewayClient` + Target `target_configuration` |
-| Memory 接口 | `MemoryClient`/`AsyncMemoryClient` 或 `MemorySession` |
-| Sandbox 使用 | `CodeInterpreter` + `code_session` 上下文管理器 |
+| Gateway 调用 | `GatewayClient` + Target `target_configuration`（四类型：REST API / MCP / APIG / 云服务）+ 出站身份 |
+| Memory 接口 | `MemoryClient`/`AsyncMemoryClient` 或 `MemorySession`；策略按场景组合（见 [03-memory](../03-memory/memory.md) 1.3） |
+| 代码执行 | `CodeInterpreter` + `code_session` 上下文管理器 |
+| 浏览器 | `Browser` + `browser_session` 上下文管理器 |
+| 入站认证 | 运行时创建时选 IAM / API Key / OAuth 2.0（见 [05-identity](../05-identity/identity.md) 2.0） |
+| 会话/存储 | `X-Hw-Agentarts-Session-Id` 头 + 存储配置（SFS Turbo / 会话存储 / OBS） |
 
 ### 5.3 云能力映射
 
 | 伙伴能力 | 平台能力 | SDK 入口 |
 | --- | --- | --- |
 | Agent 运行 | Runtime | AgentArtsRuntimeApp + `agentarts launch` |
-| 代码执行 | Sandbox | CodeInterpreter.execute_code |
-| 网页操作 | Sandbox | Browser + browser_session |
-| 上下文存储 | Memory | MemoryClient + AgentArtsMemorySessionSaver |
-| 外部 API 接入 | Gateway | GatewayClient + Target |
-| 权限控制 | Identity | require_* 装饰器 + IdentityClient |
+| 代码执行 | 代码解释器 | CodeInterpreter.execute_code |
+| 网页操作 | 浏览器 | Browser + browser_session |
+| 短期上下文 | Memory 短期记忆 | MemoryClient + AgentArtsMemorySessionSaver |
+| 长期记忆召回 | Memory 长期记忆 | AgentArtsMemoryStore + search_memories |
+| 静态知识 / RAG | 知识库 | 控制台创建知识库，在应用中关联（无 SDK；第三方走 General/KooSearch/RAGFlow） |
+| 外部 API 接入 | Gateway | GatewayClient + Target + 出站身份 |
+| 权限控制（出站） | Identity | require_* 装饰器 + IdentityClient + IAM 委托 |
+| 权限控制（入站） | Runtime 入站认证 | 创建运行时选 IAM / API Key / OAuth 2.0 |
 | 镜像构建 | SWR | SWRClient（deploy 内部） |
+| 版本灰度 | Runtime Endpoints | 控制台创建访问方式 + 权重灰度 |
 
 ### 5.4 实验局验证
 
@@ -247,6 +289,8 @@ flowchart TB
     Q4{"需要网页操作?"}
     Q5{"需要外部 API?"}
     Q6{"需要用户级授权?"}
+    Q7{"需要静态知识/RAG?"}
+    Q8{"需要托管版本+灰度?"}
 
     Saver["用 AgentArtsMemorySessionSaver<br/>作为 checkpointer"]
     Wrap["用 @app.entrypoint 包装<br/>框架 run/ainvoke"]
@@ -254,6 +298,8 @@ flowchart TB
     Br["接入 Browser"]
     GW["接入 GatewayClient + Target"]
     Id["接入 require_* 装饰器"]
+    KB["接入知识库<br/>（控制台创建 + 应用关联）"]
+    Gray["配置多版本 + 访问方式权重灰度"]
 
     Start --> Q1
     Q1 -->|是| Saver
@@ -272,6 +318,12 @@ flowchart TB
     Q5 -->|否| Q6
     GW --> Q6
     Q6 -->|是| Id
-    Q6 -->|否| Done["完成"]
-    Id --> Done
+    Q6 -->|否| Q7
+    Id --> Q7
+    Q7 -->|是| KB
+    Q7 -->|否| Q8
+    KB --> Q8
+    Q8 -->|是| Gray
+    Q8 -->|否| Done["完成"]
+    Gray --> Done
 ```

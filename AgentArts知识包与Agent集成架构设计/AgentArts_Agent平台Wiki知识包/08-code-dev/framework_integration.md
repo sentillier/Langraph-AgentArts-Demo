@@ -1,6 +1,10 @@
 # 框架集成
 
 > 如何把已有框架 Agent 接入 AgentArts 平台。核心范式：**零改动包装**——框架侧不改代码，`AgentArtsRuntimeApp` 只做外层 HTTP 适配。
+>
+> **官方材料基线**：0916《托管与运行智能体》12.5–12.10（Runtime / CodeInterpreter / Browser / Memory / Identity / Gateway SDK）+《最佳实践》。
+>
+> 若尚未决定用哪种形态，先看 [06-integration/partner_agent_adaptation.md](../06-integration/partner_agent_adaptation.md) 第 0 节「Runtime 还是 Managed Agents」。
 
 ## 1. 集成路径总览
 

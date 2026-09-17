@@ -1,6 +1,10 @@
-# Sandbox（Code Interpreter）
+# Sandbox（Code Interpreter / 代码解释器）
 
 > SDK 锚点：`agentarts.sdk.tools.code_interpreter`（`CodeInterpreter`、`code_session`）。Python 3.10+。
+>
+> **官方材料基线**：0916《托管与运行智能体》第 7 章「代码解释器」+ API 参考 4.4.1/4.4.2/4.4.8。
+>
+> ⚠️ **术语更正**：0804 材料把代码解释器与浏览器统称 **「沙箱工具」**（且当时只有代码解释器）。0916 材料已将二者拆为独立能力域：**代码解释器（Ch7）** 与 **浏览器（Ch8）**。本知识包统一使用「代码解释器」措辞。
 
 ## 1. 定位与原理
 
@@ -24,6 +28,30 @@ CodeInterpreter 同样遵循控制面/数据面分离：
 | --- | --- | --- | --- |
 | 控制面 | Code Interpreter 实例 CRUD | AK/SK | `ControlToolsHttpClient` |
 | 数据面 | session 内执行/文件操作 | IAM V11 签名 或 API Key | `DataToolsHttpClient` |
+
+## 2.1 官方能力定义与规格（0916）
+
+**定位**：运行在安全沙箱中的**动态代码执行能力**。智能体可以在隔离环境中自动生成并运行代码脚本、处理文件、执行系统命令，所有操作被严格限制在沙箱边界内，不影响宿主系统。适用于数据分析、数值计算、文件格式转换等需要动态编程的场景。
+
+**创建方式**：控制台创建 或 SDK 创建（`agentarts.sdk.tools.code_interpreter`）。官方文档同时给出两条路径的示例（7.2 控制台实践 / 7.3 SDK 实践）。
+
+**接入智能体**（7.5）：把代码解释器集成到 Agent 代码中，使其可调用隔离环境完成代码运行等复杂任务。
+
+**管理**（7.6）：查看代码解释器列表、详情、日志（工具详情页可查看代码解释器使用过程中产生的日志）。
+
+**控制面 API 名称对照**（API 参考 4.4.1–4.4.6，与 SDK 方法一一对应）：
+
+| 官方 API | SDK 方法 |
+| --- | --- |
+| `CreateCoreCodeInterpreter`（`POST /v1/core/code-interpreters`） | `create_code_interpreter` |
+| `ListCoreCodeInterpreters` | `list_code_interpreters` |
+| `ShowCoreCodeInterpreter` | `get_code_interpreter` |
+| `UpdateCoreCodeInterpreter` | `update_code_interpreter` |
+| `DeleteCoreCodeInterpreter` | `delete_code_interpreter` |
+| `ListCoreCodeInterpretersByTags` / `ShowCoreCodeInterpreterNumsByTags` / `BatchCreateCoreCodeInterpreterTags` / `BatchDeleteCoreCodeInterpreterTags` / `ListCoreCodeInterpreterTags` / `ListAllCoreCodeInterpreterTags` | 标签管理（API 直接调用） |
+| 数据面：`StartCodeInterpreterSession` / `StopCodeInterpreterSession` / `ShowCodeInterpreterSession` / `ExecuteCode` | `start_session` / `stop_session` / `get_session` / `execute_code` / `invoke` |
+
+**创建代码解释器的 IAM 权限依赖**（资源与成员管理 2.2）：需 `iam:agencies:pass`（使用委托）；出网公网另需 `eip:publicIps:associateInstance`，私网另需 `vpc:nativePorts:create`、`vpc:routeTables:update`。删除时需 `eip:publicIps:disassociateInstance`（公网）或 `vpc:nativePorts:delete`、`vpc:routeTables:update`（私网）。
 
 ## 3. 快速开始
 
@@ -224,8 +252,8 @@ Sandbox 是 Runtime 内部调用的工具，不直接对外暴露 HTTP 端点。
 
 1. **优先用 `code_session` 上下文管理器**：自动 start/stop，避免 session 泄漏
 2. **生产环境用 IAM 认证**：避免 API Key 硬编码
-3. **命令执行走 `execute_command`**：享受元字符阻断保护；需要复杂 shell 逻辑时拆分为多次调用
+3. **命令执行走 `execute_command`**：享受元字符阻断保护；需要复杂 shell 逻辑时拆分为多次调用。**注意官方口径**：代码解释器是受限命令环境，**不支持自定义镜像、不支持挂载持久存储**（`常见问题.pdf` 4.3）。若需要"代码跑在自己镜像里 + 产物落持久存储 + 完整 shell"，需改用运行时（见 [01-runtime/runtime.md](../01-runtime/runtime.md) 第 2 节）
 4. **大文件用 `upload_files` / `download_files`**：批量减少往返
 5. **`description` 字段要写**：上传文件时写明数据结构（如 "CSV with columns: date, revenue"），便于 LLM 理解
 6. **及时 `clear_context`**：长 session 中变量累积会拖慢执行
-7. **上线前验证日志**：开启日志后，用一次可识别的测试执行验证工具详情和“智能体运行分析”都有数据。详见 [可观测性](../07-operation/observability.md)。
+7. **上线前验证日志**：开启日志后，用一次可识别的测试执行验证工具详情和「观测与优化 > 观测 > 查看托管智能体数据」都有数据。详见 [可观测性](../07-operation/observability.md)。

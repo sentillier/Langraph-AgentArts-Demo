@@ -1,6 +1,8 @@
 # Memory 插件（AI 编程助手长期记忆）
 
 > SDK 锚点：`agentarts.toolkit.plugins.memory`（v0.1.5 起，v0.1.6 完善）。包含统一安装器 `installer/`、平台资产 `ai_agent/`、MCP Server `mcp/`、共享 Hook 脚本 `resources/`。
+>
+> **官方材料基线**：0916《托管与运行智能体》5.7「安装记忆插件」。**v0.1.6 的官方版本说明就是「新增记忆插件」**。
 > CLI 入口：`agentarts memory install` / `agentarts memory uninstall`。
 
 ## 1. 定位与原理
