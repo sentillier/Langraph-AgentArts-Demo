@@ -8,6 +8,8 @@
 
 ## 官方材料基线（重要）
 
+官方在线索引：[00-overview/official_llms_index.md](00-overview/official_llms_index.md)，来源为华为云 AgentArts [`llms.txt`](https://support.huaweicloud.com/agentarts/llms.txt)，最近核验日期为 2026-09-28。该索引用于发现新增/变更页面；具体事实仍需回写到对应专题文档并经过版本核验。
+
 | 版本 | 位置 | 说明 |
 | --- | --- | --- |
 | **最新** | `AgentArts原始材料-0916/`（2026-09-14 ~ 2026-09-16，12 分册 / 4,864 页） | **本知识包的全部事实来源** |
@@ -16,6 +18,10 @@
 0916 相对 0804 是**结构性变化**（文档体系重排 + 新增能力域），不是补充修订。完整差异清单与影响范围见 **[00-overview/release_delta_0916.md](00-overview/release_delta_0916.md)**。**引用 0804 结论前必须先查该清单。**
 
 素材来源：0916 官方 12 分册（托管与运行智能体 / Managed Agents / 观测与优化智能体 / 资源与成员管理 / API 参考 2,385 页 / 低代码开发智能体 / 最佳实践 / 产品介绍 / 开始使用 / 常见问题 / 计费说明 / SDK 参考）+ SDK 仓库 `src/` 源码 + `docs/cn/` 中文文档。
+
+## API 参考知识包
+
+API 调用内容已独立整理为 [AgentArts_Agent平台API参考Wiki知识包](../AgentArts_Agent平台API参考Wiki知识包/README.md)，包含 265 个 API 操作、17 个调用指南、通用请求/认证速查、资源 API 矩阵，以及面向 Agent 的 TXT/JSONL 索引。需要查 API 字段、权限、状态码或官方示例时，优先从该包进入。
 
 ## 知识组织
 
